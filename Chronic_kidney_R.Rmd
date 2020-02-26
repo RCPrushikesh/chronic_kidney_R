@@ -1,0 +1,155 @@
+```{r}
+# install.packages("mice")
+library("mice")
+library("tidyverse")
+```
+
+Read in the csv file and create the master data_frames
+
+```{r}
+data_complete <- read_csv("casestudydata.csv")
+
+# Exploring Data
+data_complete <- data_complete %>% 
+  rename(total_chol=`Total Chol`, fam_hypertension = `Fam Hypertension`, fam_diabetes = `Fam Diabetes`, fam_cvd = `Fam CVD`)
+
+
+summary(data_complete)
+str(data_complete)
+```
+
+
+```{r}
+
+
+# converting the variables into factors
+
+data_complete$Female <- as.factor(data_complete$Female)
+data_complete$Unmarried <- as.factor(data_complete$Unmarried)
+data_complete$Income <- as.factor(data_complete$Income)
+data_complete$Insured <- as.factor(data_complete$Insured)
+data_complete$Obese <- as.factor(data_complete$Obese)
+data_complete$Dyslipidemia <- as.factor(data_complete$Dyslipidemia)
+data_complete$PVD <- as.factor(data_complete$PVD)
+data_complete$PoorVision <- as.factor(data_complete$PoorVision)
+data_complete$Smoker <- as.factor(data_complete$Smoker)
+data_complete$Hypertension <- as.factor(data_complete$Hypertension)
+data_complete$Diabetes <- as.factor(data_complete$Diabetes)
+data_complete$fam_diabetes <- as.factor(data_complete$fam_diabetes)
+data_complete$fam_hypertension <- as.factor(data_complete$fam_hypertension)
+data_complete$Stroke <- as.factor(data_complete$Stroke)
+data_complete$CVD <- as.factor(data_complete$CVD)
+data_complete$Activity <- as.factor(data_complete$Activity)
+data_complete$fam_cvd <- as.factor(data_complete$fam_cvd)
+data_complete$CHF <- as.factor(data_complete$CHF)
+data_complete$Anemia <- as.factor(data_complete$Anemia)
+data_complete$CKD <- as.factor(data_complete$CKD)
+
+# creating the data on which we would predict (Training set)
+
+data_missing_ckd_complete <- slice(data_complete,6001:n())
+```
+
+
+
+```{r}
+# mice imputation for missing data
+imputed_data_complete <- mice(data_complete,m=5,seed = 230000)
+summary(imputed_data_complete)
+imputed_data_complete$predictorMatrix
+imputed_data_total <- mice::complete(imputed_data_complete)
+
+```
+
+```{r}
+# Sampling for Model Evaluation
+imputed_training_set <- imputed_data_total[1:5500,]
+imputed_testing_set <- imputed_data_total[5501:6000,]
+summary(imputed_training_set)
+imputed_training_set=na.omit(imputed_training_set)
+dim(imputed_training_set)
+
+
+##Modeling for predicting paitents having CKD based on our Medical research and Dataset
+
+Model <-  glm(CKD~Age+Female+Racegrp+BMI+SBP+DBP+HDL+ Total.Chol+Diabetes+Hypertension+CHF+
+                 Smoker+Fam.Hypertension+Fam.Diabetes+Fam.CVD +Dyslipidemia+ Stroke + CVD + PVD + Obese +Anemia ,data,family = "binomial")
+
+
+## Camparing our model with backward model
+
+model_all=glm(CKD~.,family="binomial",data=imputed_training_set)
+model_all_back=step(model_all,direction="backward")
+summary(model)
+
+
+## Predicting on the testing set to check our accuracy through F-Mesure and ROC
+
+imputed_testing_set1 <- imputed_data_total[6001:8820,]
+summary(imputed_training_set1)
+imputed_training_set1=na.omit(imputed_training_set1)
+dim(imputed_training_set1)
+imputed_training_set1
+
+
+predicted_values=predict(model,type="response", newdata = imputed_testing_set1)  # predicts for ALL in sample data
+summary(predicted_values)
+
+
+classify=ifelse(predicted_values>.2,1,0)  # this is a threshold, we say if probability >20% , then say "yes"
+summary(classify)
+
+round(c_accuracy(imputed_testing_set$CKD,classify),3)
+
+
+## Calulating profit based on $1300 for a True postive and -$100 for False positive
+acc=c_accuracy(imputed_testing_set$CKD,classify)
+c1=1300   # penalize me  $100 for a false positive
+c2=100  #  penalize me $200 for a false negatives
+Profit=acc[7]*c1+acc[9]*c2
+PRofit
+
+
+```
+
+```{r}
+imputed_training_set1 <- imputed_data_total
+
+
+
+
+
+
+
+
+## Function to calculate F-Measure, precision, accuracy etc of our model
+
+c_accuracy=function(actuals,classifications){
+  df=data.frame(actuals,classifications);
+  
+  
+  tp=nrow(df[df$classifications==1 & df$actuals==1,]);        
+  fp=nrow(df[df$classifications==1 & df$actuals==0,]);
+  fn=nrow(df[df$classifications==0 & df$actuals==1,]);
+  tn=nrow(df[df$classifications==0 & df$actuals==0,]); 
+  
+  
+  recall=tp/(tp+fn)
+  precision=tp/(tp+fp)
+  accuracy=(tp+tn)/(tp+fn+fp+tn)
+  tpr=recall
+  fpr=fp/(fp+tn)
+  fmeasure=2*precision*recall/(precision+recall)
+  scores=c(recall,precision,accuracy,tpr,fpr,fmeasure,tp,tn,fp,fn)
+  names(scores)=c("recall","precision","accuracy","tpr","fpr","fmeasure","tp","tn","fp","fn")
+  
+  #print(scores)
+  return(scores);
+}
+write.csv(imputed_data_total,"imputed_data_total.csv")
+```
+
+
+
+
+
